@@ -1,0 +1,34 @@
+GET http://127.0.0.1:8000/signin
+Authorization: Basic OTk5Ok55eEAyMDI1
+
+####
+POST http://127.0.0.1:8000/copy
+Content-Type: application/json
+
+{
+  "fromPath": "E:/Reports",
+  "toPath": "E:/NYXPG/Data",
+  "startDate": "2024-03-31",
+  "endDate": "2024-03-31",
+  "files": [
+    {
+      "key": "MON_TRIAL_BALANCE_REPORT",
+      "name": "MONTRIAL",
+      "display_name": "Montrial",
+      "files": 1,
+      "file_type": "prefix",
+      "db": "nyx"
+    }
+  ]
+}
+
+### REPORTS – GEN001
+POST http://localhost:8000/reports
+Content-Type: application/json
+
+{
+  "reportType": "GEN001",
+  "branch": "0",
+  "fromDate": "2024-03-31",
+  "toDate": "2024-03-31"
+}
