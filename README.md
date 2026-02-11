@@ -95,7 +95,7 @@ The migration is focused on:
 | Logging | Python Logging module |
 | File Handling | shutil, gzip, pandas |
 | Authentication | JWT / bcrypt |
-| Reports | `MONTRIAL`, `GEN001`, custom stored procedures |
+| Reports | `MONTRIAL` |
 
 ---
 
