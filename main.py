@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Response
 from pydantic import BaseModel
-from typing import List, Dict
+from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from pathlib import Path
 import asyncio
@@ -8,6 +8,7 @@ import shutil
 import gzip
 import os
 import psycopg2
+import psycopg2.extras
 import base64
 import bcrypt
 import jwt
@@ -22,11 +23,7 @@ import asyncpg
 import logging
 
 logger = logging.getLogger("reports")
-
-
 load_dotenv()  # Load .env file
-
-
 
 # DB Config
 DB_HOST = os.getenv("DB_HOST")
@@ -39,7 +36,6 @@ JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = 60  # Token valid for 60 minutes
 
 app = FastAPI()
-
 
 
 CORS_ORIGINS = ["http://localhost:5000"]
@@ -168,8 +164,6 @@ def get_paths() -> dict:
     }
 
 
-
-
 class FileItem(BaseModel):
     key: str
     name: str
@@ -197,15 +191,6 @@ def delete_all_files_in_directory(path: str):
         elif f.is_dir():
             shutil.rmtree(f)
 
-# def unzip_file(source: Path, dest: Path) -> Path:
-#     """Unzip .gz recursively"""
-#     current = source
-#     while current.suffix == ".gz":
-#         out_file = dest / current.stem
-#         with gzip.open(current, "rb") as f_in, open(out_file, "wb") as f_out:
-#             shutil.copyfileobj(f_in, f_out)
-#         current = out_file
-#     return current
 
 def unzip_file(source: Path, dest: Path) -> Path:
     """Unzip .gz recursively"""
@@ -215,7 +200,7 @@ def unzip_file(source: Path, dest: Path) -> Path:
     while current.suffix == ".gz":
         out_file = dest / current.stem
 
-        # 🚨 SAME FILE PROTECTION
+        # 🚨 FILE PROTECTION
         if out_file.exists():
             return out_file
         with gzip.open(current, "rb") as f_in, open(out_file, "wb") as f_out:
@@ -320,59 +305,6 @@ def get_schema_for_branch(branch_code: str) -> str:
         raise RuntimeError(f"No schema mapped for branch {branch_code}")
 
     return schema
-
-
-
-
-# def run_db_script(file_path: str, file_name: str, db_conn_str: str):    
-#     try:
-#         sqls = get_dynamic_script(file_name, file_path)
-
-#         conn = psycopg2.connect(db_conn_str)
-#         cur = conn.cursor()
-
-#         schema = os.getenv("BRANCH_SCHEMA", "public")
-#         cur.execute(f"SET search_path TO {schema}")
-
-#         for sql in sqls:
-
-#             # After TRUNCATE → do copy
-#             if "TRUNCATE TABLE mon_trial_daily" in sql:
-#                 cur.execute(sql)
-
-#                 # 🔥 CLEAN + COPY
-#                 with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-#                     cleaned = []
-#                     for line in f:
-#                         line = line.replace('\r', '').replace('\x00', '')   
-#                         cleaned.append(line.rstrip())
-
-#                 buffer = io.StringIO("\n".join(cleaned))
-
-#                 cur.copy_expert(
-#                     "COPY mon_trial_daily(fulltext) FROM STDIN WITH (FORMAT text)",
-#                     buffer
-#                 )
-
-#             else:
-#                 cur.execute(sql)
-
-#         conn.commit()
-#         cur.close()
-#         conn.close()
-
-#         msg = f"✅ DB Processing completed for {file_name} ({schema})"
-#         send_status("success", msg)
-#         return msg
-
-#     except Exception as e:
-#         send_status("error", f"❌ DB error {file_name}: {e}")
-#         raise   # STOP processing immediately
-
-
-import io
-import os
-import psycopg2
 
 def run_db_script(file_path: str, file_name: str, db_conn_str: str):    
     try:
@@ -480,17 +412,6 @@ async def copy_endpoint(request: FileRequest, background_tasks: BackgroundTasks)
     # Flatten results
     flat_results = [item for sublist in results for item in sublist]
     return flat_results
-
-
-
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
-from datetime import datetime
-import psycopg2
-import psycopg2.extras
-import logging
-import asyncpg
 
 # =========================================================
 # QUERY MAP GEN001
@@ -665,9 +586,6 @@ def get_reports(request: ReportRequest) -> List[Dict[str, Any]]:
             status_code=500,
             detail=f"Unexpected error: {str(e)}"
         )
-
-
-
 
 if __name__ == "__main__":
     import uvicorn
