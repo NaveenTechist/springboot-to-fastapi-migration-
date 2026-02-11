@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import asyncio
 import shutil
+import gzip
 import os
 import psycopg2
 import base64
@@ -85,12 +86,12 @@ async def signin(request: Request, response: Response, code: str | None = None):
 
         if not user_row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-        print(user_row)
+        # print(user_row)
 
         # 3️⃣ Map tuple to dict
         columns = ["id", "employeeid", "username", "password", "brname", "branchno", "city", "role", "status", "mis", "slbc", "reconciliation", "expiry_date"]
         user = dict(zip(columns, user_row))
-        print(columns)
+        # print(columns)
 
         # 4️⃣ Verify password
         hashed_password = user["password"]
@@ -196,15 +197,33 @@ def delete_all_files_in_directory(path: str):
         elif f.is_dir():
             shutil.rmtree(f)
 
+# def unzip_file(source: Path, dest: Path) -> Path:
+#     """Unzip .gz recursively"""
+#     current = source
+#     while current.suffix == ".gz":
+#         out_file = dest / current.stem
+#         with gzip.open(current, "rb") as f_in, open(out_file, "wb") as f_out:
+#             shutil.copyfileobj(f_in, f_out)
+#         current = out_file
+#     return current
+
 def unzip_file(source: Path, dest: Path) -> Path:
     """Unzip .gz recursively"""
     current = source
+    dest.mkdir(parents=True, exist_ok=True)
+
     while current.suffix == ".gz":
         out_file = dest / current.stem
+
+        # 🚨 SAME FILE PROTECTION
+        if out_file.exists():
+            return out_file
         with gzip.open(current, "rb") as f_in, open(out_file, "wb") as f_out:
             shutil.copyfileobj(f_in, f_out)
         current = out_file
+
     return current
+
 
 def convert_xls_to_csv(file_path: Path, dest_path: Path):
     """Placeholder for XLS/XLSX → CSV logic (can use pandas or openpyxl)"""
@@ -219,53 +238,75 @@ def send_status(msg_type: str, msg: str):
 # --------------------
 # Database Processing
 # --------------------
-
-# # metadata.py
-# FILE_METADATA = {
-#     "MONTRIAL": {
-#         "tableName": "mon_trial_daily",
-#         "sequenceName": "mon_trial_daily_rno_seq",
-#         "procedureName": "mon_trial_load",
-#         "useFilePath": False
-#     }
-# }
-
-
-# def get_dynamic_script(file_name: str, file_path: str) -> list[str]:
-#     meta = FILE_METADATA.get(file_name.upper())
-#     if not meta:
-#         raise ValueError(f"No DB script for file: {file_name}")
-
-#     proc = meta.get("procedureName")
-#     use_path = meta.get("useFilePath", False)
-
-#     if not proc:
-#         raise ValueError(f"No procedure defined for file: {file_name}")
-
-#     if use_path:
-#         return [f"CALL {proc}('{file_path}')"]
-#     else:
-#         return [f"CALL {proc}()"]
-
-
-
 def get_dynamic_script(file_name: str, file_path: str) -> list[str]:
+
     if file_name.upper() == "MONTRIAL":
+
         return [
+
+            # 1️⃣ Truncate
             "TRUNCATE TABLE mon_trial_daily;",
+
+            # 2️⃣ Reset sequence
+            "ALTER SEQUENCE mon_trial_daily_rno_seq RESTART WITH 1;",
+
+            # 3️⃣ COPY (file_path used here clearly)
+            f"""
+            COPY mon_trial_daily(fulltext)
+            FROM STDIN
+            WITH (
+                FORMAT text,
+                ENCODING 'UTF8'
+            );
+            """,
+
+            # 4️⃣ Cleanup deletes
+            "delete from mon_trial_daily where substr(fulltext,3,10) ='B: GLAJ02 ';",
+            "delete from mon_trial_daily where substr(fulltext,3,10) ='EQUEST PAR';",
+            "delete from mon_trial_daily where substr(fulltext,3,10) ='PORT      ';",
+            "delete from mon_trial_daily where substr(fulltext,3,10) ='TE CODE   ';",
+            "delete from mon_trial_daily where substr(fulltext,3,10) ='QUESTOR   ';",
+            "delete from mon_trial_daily where substr(fulltext,3,10) ='TE        ';",
+            "delete from mon_trial_daily where substr(fulltext,3,10) ='AR        ';",
+            "delete from mon_trial_daily where trim(fulltext) ='01';",
+            "delete from mon_trial_daily where substr(trim(fulltext),1,6) ='CURREN';",
+            "delete from mon_trial_daily where SUBSTR(fulltext,51,8) ='FOR YEAR';",
+            "delete from mon_trial_daily where SUBSTR(fulltext,13,12) ='1          N';",
+            "delete from mon_trial_daily where SUBSTR(fulltext,13,10) ='UNIT TOTAL';",
+            "delete from mon_trial_daily where SUBSTR(fulltext,13,14) ='CURRENCY TOTAL';",
+            "delete from mon_trial_daily where SUBSTR(fulltext,13,12) ='ENTITY TOTAL';",
+            "delete from mon_trial_daily where fulltext IS NULL;",
+            "delete from mon_trial_daily where trim(fulltext)='.00';",
+            "delete from mon_trial_daily where trim(fulltext)='UNIT TOTAL';",
+
+            # 5️⃣ Procedure
             "CALL mon_trial_load();",
-            """INSERT INTO MONTRIAL
-               (BRCODE,CGL,CGLDESC,OPEN_BAL,DEBIT_BAL,CREDIT_BAL,NET_CHANGE,END_BAL,DATE_OF_REPORT)
-               SELECT 
-               BRCD::NUMERIC,
-               CGL::NUMERIC,
-               CGLDESC,OPEN_BAL,DEBIT_BAL,CREDIT_BAL,NET_CHANGE,END_BAL,REPORT_DT 
-               FROM MON_TRIAL_DAILY
-               WHERE END_BAL IS NOT NULL;""",
+
+            # 6️⃣ Final insert
+            """
+            INSERT INTO MONTRIAL
+            (BRCODE, CGL, CGLDESC, OPEN_BAL, DEBIT_BAL, CREDIT_BAL, NET_CHANGE, END_BAL, DATE_OF_REPORT)
+            SELECT
+                BRCD::NUMERIC,
+                CGL::NUMERIC,
+                CGLDESC,
+                OPEN_BAL,
+                DEBIT_BAL,
+                CREDIT_BAL,
+                NET_CHANGE,
+                END_BAL,
+                REPORT_DT
+            FROM MON_TRIAL_DAILY
+            WHERE END_BAL IS NOT NULL;
+            """,
+
+            # 7️⃣ Final procedure
             "CALL mon_trial_drcr();"
         ]
+
     else:
         raise ValueError("No DB script for file")
+
 
 def get_schema_for_branch(branch_code: str) -> str:
     raw = os.getenv("BRANCH_SCHEMA_MAP", "")
@@ -283,7 +324,57 @@ def get_schema_for_branch(branch_code: str) -> str:
 
 
 
-def run_db_script(file_path: str, file_name: str, db_conn_str: str):
+# def run_db_script(file_path: str, file_name: str, db_conn_str: str):    
+#     try:
+#         sqls = get_dynamic_script(file_name, file_path)
+
+#         conn = psycopg2.connect(db_conn_str)
+#         cur = conn.cursor()
+
+#         schema = os.getenv("BRANCH_SCHEMA", "public")
+#         cur.execute(f"SET search_path TO {schema}")
+
+#         for sql in sqls:
+
+#             # After TRUNCATE → do copy
+#             if "TRUNCATE TABLE mon_trial_daily" in sql:
+#                 cur.execute(sql)
+
+#                 # 🔥 CLEAN + COPY
+#                 with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+#                     cleaned = []
+#                     for line in f:
+#                         line = line.replace('\r', '').replace('\x00', '')   
+#                         cleaned.append(line.rstrip())
+
+#                 buffer = io.StringIO("\n".join(cleaned))
+
+#                 cur.copy_expert(
+#                     "COPY mon_trial_daily(fulltext) FROM STDIN WITH (FORMAT text)",
+#                     buffer
+#                 )
+
+#             else:
+#                 cur.execute(sql)
+
+#         conn.commit()
+#         cur.close()
+#         conn.close()
+
+#         msg = f"✅ DB Processing completed for {file_name} ({schema})"
+#         send_status("success", msg)
+#         return msg
+
+#     except Exception as e:
+#         send_status("error", f"❌ DB error {file_name}: {e}")
+#         raise   # STOP processing immediately
+
+
+import io
+import os
+import psycopg2
+
+def run_db_script(file_path: str, file_name: str, db_conn_str: str):    
     try:
         sqls = get_dynamic_script(file_name, file_path)
 
@@ -294,13 +385,12 @@ def run_db_script(file_path: str, file_name: str, db_conn_str: str):
         cur.execute(f"SET search_path TO {schema}")
 
         for sql in sqls:
+            sql_clean = sql.strip()  # removes spaces/newlines
 
-            # After TRUNCATE → do copy
-            if "TRUNCATE TABLE mon_trial_daily" in sql:
-                cur.execute(sql)
-
-                # 🔥 CLEAN + COPY
+            # ✅ Handle COPY safely
+            if sql_clean.upper().startswith("COPY"):
                 with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    # Optional: clean nulls and \r
                     cleaned = []
                     for line in f:
                         line = line.replace('\r', '').replace('\x00', '')
@@ -308,13 +398,11 @@ def run_db_script(file_path: str, file_name: str, db_conn_str: str):
 
                 buffer = io.StringIO("\n".join(cleaned))
 
-                cur.copy_expert(
-                    "COPY mon_trial_daily(fulltext) FROM STDIN WITH (FORMAT text)",
-                    buffer
-                )
+                cur.copy_expert(sql_clean, buffer)
 
             else:
-                cur.execute(sql)
+                # Normal SQL
+                cur.execute(sql_clean)
 
         conn.commit()
         cur.close()
@@ -325,9 +413,8 @@ def run_db_script(file_path: str, file_name: str, db_conn_str: str):
         return msg
 
     except Exception as e:
-        msg = f"❌ DB error {file_name}: {e}"
-        send_status("error", msg)
-        return msg
+        send_status("error", f"❌ DB error {file_name}: {e}")
+        raise
 
 
 async def process_file(file: FileItem, request: FileRequest):
@@ -337,6 +424,9 @@ async def process_file(file: FileItem, request: FileRequest):
     src_dir = Path(request.fromPath)
     dest_dir = Path(request.toPath)
     dest_dir.mkdir(parents=True, exist_ok=True)
+
+    if src_dir.resolve() == dest_dir.resolve():
+        raise RuntimeError("fromPath and toPath must be different folders")
 
     # Here just simulate date folder filtering
     for folder in os.listdir(src_dir):
@@ -359,7 +449,8 @@ async def process_file(file: FileItem, request: FileRequest):
                     dest_file = dest_dir / f"{actual_file.stem}.csv"
                     convert_xls_to_csv(actual_file, dest_file)
                 else:
-                    shutil.copy(actual_file, dest_file)
+                    if actual_file.parent.resolve() != dest_dir.resolve():
+                        shutil.copy(actual_file, dest_file)
                 # Process DB (sync for simplicity, async can be added)
                 result = run_db_script(str(dest_file), file.display_name, "dbname=nyx user=postgres password=123 host=localhost port=5433")
                 matched_files.append(result)

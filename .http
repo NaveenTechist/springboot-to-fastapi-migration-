@@ -32,3 +32,16 @@ Content-Type: application/json
   "fromDate": "2024-03-31",
   "toDate": "2024-03-31"
 }
+
+####
+{
+  "reportType": "GEN001",
+  "branch": "0",
+  "fromDate": "2024-03-31",
+  "toDate": "2024-03-31",
+  "page": 1,
+  "size": 10,
+  "sortBy": "report_date",
+  "sortDirection": "DESC",
+  "filters": []
+}
