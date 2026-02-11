@@ -1,4 +1,4 @@
-# Spring Boot → FastAPI Migration – LMST Backend
+# Spring Boot → FastAPI Migration – LMST Backend (Report Generation Focus)
 
 [![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)  
 [![FastAPI](https://img.shields.io/badge/FastAPI-HighPerformance-green)](https://fastapi.tiangolo.com/)  
@@ -9,46 +9,59 @@
 
 ## 📌 Project Overview
 
-This repository demonstrates a **real-world backend migration** from **Spring Boot (Java)** to **FastAPI (Python)** for the LMST system – a data-driven, scheduled, I/O-heavy backend application.
+This repository demonstrates a **backend migration** from **Spring Boot (Java)** to **FastAPI (Python)** for the LMST system, with a **focus on report generation performance**.
 
-The migration evaluates whether **Python + FastAPI** can replace Spring Boot for workloads characterized by:
+The goal is to evaluate whether Python + FastAPI can handle **high-volume database reports** efficiently while maintaining:
 
-- Heavy database usage (PostgreSQL + stored procedures)  
-- Large-scale data processing (millions of rows)  
-- Scheduled document ingestion jobs  
-- High concurrency with low-to-moderate CPU usage  
-- Long-term maintainability and future AI/ML integration readiness  
+- Heavy PostgreSQL usage (millions of rows, stored procedures)  
+- Scheduled and on-demand report generation  
+- High I/O concurrency  
+- Low-to-moderate CPU usage  
+- Ease of maintenance and future AI/ML integration  
 
-> ⚠️ This is not a rewrite for trend-following purposes. The goal is **technical optimization** for LMST’s data pipeline workload.
-
----
-
-## 🎯 Purpose of Migration
-
-The migration focuses on:
-
-1. Improving **data-processing flexibility**  
-2. Enabling **async, non-blocking I/O**  
-3. Simplifying **document → table ingestion pipelines**  
-4. Supporting **scheduled automated jobs**  
-5. Preparing the backend for **future AI/ML integrations**
+> ⚠️ This is a **performance-driven migration**, primarily to test and compare report generation times between Spring Boot and FastAPI.
 
 ---
 
-## ⚙️ LMST Workload Characteristics
+## 🎯 Purpose of Migration (Report-Focused)
+
+The migration is focused on:
+
+1. Measuring **report generation performance**  
+2. Supporting **async, non-blocking I/O** for large datasets  
+3. Enabling **scheduled and on-demand report jobs**  
+4. Simplifying **document → table ingestion pipelines**  
+5. Preparing for future **AI/ML report analytics**
+
+---
+
+## ⚡ Report Generation Performance (Speed Test)
+
+| Framework | Run Times (seconds) | Notes |
+|-----------|------------------|-------|
+| **Spring Boot** | 2.55, 1.59, 1.65, 2.18 | Consistent for `MONTRIAL` report |
+| **FastAPI (Python)** | 1.59, 1.81, 3.49, 1.93 | Sometimes slightly higher due to async scheduling, but comparable overall |
+
+> 🔹 Observations:  
+> - FastAPI achieves **similar or better times** for I/O-heavy report workloads.  
+> - Variability in FastAPI is due to **event loop scheduling and DB async calls**, but peak performance is still competitive.  
+> - Spring Boot remains stable for **CPU-light, high-DB workloads**, but FastAPI offers **async concurrency** benefits for future scaling.
+
+---
+
+## ⚙️ LMST Workload Characteristics (Report Focus)
 
 | Area | Nature |
 |------|-------|
 | API Traffic | I/O-bound |
 | Database | PostgreSQL only |
 | Data Volume | Large (millions of rows) |
-| Business Logic | Mostly in DB (stored procedures) |
-| Scheduling | Daily fixed-time jobs (e.g., 9 AM) |
-| File Processing | Document → Table ingestion |
+| Business Logic | Mostly in DB (stored procedures for reports) |
+| Scheduling | Daily and on-demand report generation |
 | CPU Usage | Low–moderate |
 | Concurrency | High DB + file I/O |
 
-> The workload is **I/O-heavy**, making FastAPI's async-first architecture a natural fit.
+> The **report generation workload** is I/O-heavy, making FastAPI’s async-first architecture ideal for scaling multiple report requests.
 
 ---
 
@@ -63,12 +76,9 @@ The migration focuses on:
 | Config | `application.yml` | `.env` / Python settings |
 | Server | Tomcat | Uvicorn |
 | Concurrency | Thread-based | Async / Event loop |
-| Best For | CPU-heavy enterprise workloads | Data pipelines, async I/O workloads |
+| Best For | Stable, CPU-light report generation | Async report pipelines, I/O-heavy workloads |
 
-> LMST’s **daily data ingestion & async DB processing** workload aligns better with **FastAPI architecture**.
-
----
-
+> FastAPI is well-suited for **parallel report generation** and **high-concurrency DB access**.
 
 ---
 
@@ -85,17 +95,17 @@ The migration focuses on:
 | Logging | Python Logging module |
 | File Handling | shutil, gzip, pandas |
 | Authentication | JWT / bcrypt |
+| Reports | `MONTRIAL`, `GEN001`, custom stored procedures |
 
 ---
 
-## 🔹 Key Features
+## 🔹 Key Features (Report-Focused)
 
-- ✅ **Async I/O** for DB & file operations  
+- ✅ **Async I/O** for DB and file operations  
 - ✅ **Document ingestion pipeline**: `.gz`, `.xls`, `.xlsx` → CSV → PostgreSQL  
-- ✅ **Background tasks** with `BackgroundTasks`  
-- ✅ **JWT-based authentication**  
-- ✅ **Dynamic DB stored procedure execution**  
+- ✅ **Dynamic stored procedure execution** for report generation  
+- ✅ **Background tasks** with FastAPI `BackgroundTasks`  
+- ✅ **JWT-based authentication for API access**  
 - ✅ **Configurable via `.env` file**  
-- ✅ **Cross-Origin Resource Sharing (CORS) support**  
-
-
+- ✅ **CORS support for dashboard clients**  
+- ✅ **Performance logging** for each report run (execution time in seconds)  
