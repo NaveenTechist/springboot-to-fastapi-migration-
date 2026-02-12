@@ -34,6 +34,55 @@ Content-Type: application/json
 }
 
 ####
+POST http://127.0.0.1:8000/copy
+Content-Type: application/json
+
+{
+  "fromPath": "E:/Reports",
+  "toPath": "E:/NYXPG/Data",
+  "startDate": "2024-03-31",
+  "endDate": "2024-03-31",
+  "files": [
+    {
+      "key": "depd0580",
+      "name": "CCOD",
+      "display_name": "CCOD",
+      "files": 2,
+      "file_type": "prefix",
+      "db": "nyx"
+    }
+  ]
+}
+
+
+#### 
+
+POST http://127.0.0.1:8000/copy
+Content-Type: application/json
+
+{
+  "fromPath": "E:/Reports",
+  "toPath": "E:/NYXPG/Data",
+  "startDate": "2024-03-31",
+  "endDate": "2024-03-31",
+  "files": [
+    {
+      "key": "depd637t",
+      "name": "TDS_REPORT",
+      "display_name": "TDS REPORT",
+      "files": 1,
+      "file_type": "prefix",
+      "db": "nyx"
+    }
+  ]
+}
+
+
+
+
+
+
+####
 {
   "reportType": "GEN001",
   "branch": "0",
@@ -45,3 +94,7 @@ Content-Type: application/json
   "sortDirection": "DESC",
   "filters": []
 }
+
+
+####
+
