@@ -54,7 +54,7 @@ FILE_METADATA = {
         "tableName": "shadow_dep",
         "sequenceName": "shadow_dep_rno_seq",
         "procedureName": "shadow_dep_upd_2",
-        "useFilePath": True,
+        "useFilePath": False,  # ← FIXED: Spring has this as false
         "scriptType": "custom"
     },
 
@@ -62,7 +62,7 @@ FILE_METADATA = {
         "tableName": "shadow_loan",
         "sequenceName": "shadow_loan_rno_seq",
         "procedureName": "shadow_loan_upd_2",
-        "useFilePath": True,
+        "useFilePath": False,  # ← FIXED: Spring has this as false
         "scriptType": "custom"
     },
 }
@@ -145,7 +145,7 @@ CUSTOM_SCRIPTS = {
             ENCODING 'UTF8'
         );
         """,
-        "{{CALL_PROCEDURE}}"
+        "CALL {{PROCEDURE_NAME}}();"  # ← NO file path parameter!
     ],
 
     # ==========================================
@@ -162,7 +162,7 @@ CUSTOM_SCRIPTS = {
             ENCODING 'UTF8'
         );
         """,
-        "{{CALL_PROCEDURE}}"
+        "CALL {{PROCEDURE_NAME}}();"  # ← NO file path parameter!
     ]
 }
 
@@ -283,9 +283,10 @@ class ScriptGenerator:
         table_name = metadata.get("tableName", "")
         sequence_name = metadata.get("sequenceName", "")
 
-        # Build CALL statement
+        # Build CALL statement for {{CALL_PROCEDURE}} placeholder
+        # This is used in BASE_SCRIPT
         if procedure:
-            if metadata.get("passFilePathToProcedure", False):
+            if metadata.get("passFilePathToProcedure", False) or metadata.get("useFilePath", False):
                 call_stmt = f"CALL {procedure}('{file_path}');"
             else:
                 call_stmt = f"CALL {procedure}();"
@@ -304,8 +305,11 @@ class ScriptGenerator:
             # Replace file path
             statement = statement.replace("{{FILE_PATH}}", file_path)
 
-            # Replace CALL
+            # Replace CALL_PROCEDURE (used in BASE_SCRIPT)
             statement = statement.replace("{{CALL_PROCEDURE}}", call_stmt)
+            
+            # Replace PROCEDURE_NAME (used in CUSTOM_SCRIPTS like SHADOW_DEP)
+            statement = statement.replace("{{PROCEDURE_NAME}}", procedure if procedure else "")
 
             # ❗ If still any {{ }} remains → error
             if "{{" in statement:
@@ -415,6 +419,79 @@ def unzip_file(source: Path, dest: Path) -> Path:
 # FILE CLEANER (Same as Java logic)
 # =========================================================
 
+# def copy_file_with_encoding(source_file: Path, destination_file: Path):
+#     """
+#     Clean file before DB COPY:
+#     - Remove null characters
+#     - Remove non-ASCII characters
+#     - Remove quote-like characters
+#     - Remove empty lines
+#     - Replace backslashes and tabs
+#     """
+#     try:
+#         # Validate source file exists
+#         if not source_file.exists():
+#             raise FileNotFoundError(f"Source file not found: {source_file}")
+        
+#         if not source_file.is_file():
+#             raise ValueError(f"Source path is not a file: {source_file}")
+        
+#         # Read source file
+#         with open(source_file, "r", encoding="ISO-8859-1", errors="ignore") as f:
+#             lines = f.readlines()
+
+#         cleaned_lines = []
+
+#         for line in lines:
+#             # Remove null characters
+#             line = line.replace("\x00", " ")
+            
+#             # Remove non-ASCII characters
+#             line = "".join(c if ord(c) < 128 else " " for c in line)
+            
+#             # Remove double quotes
+#             line = line.replace('""', " ")
+
+#             # Remove various quote characters
+#             for ch in ['"', "'", "'", "'", "‚", "‛", "`", "´"]:
+#                 line = line.replace(ch, " ")
+
+#             # Replace backslashes and tabs
+#             line = line.replace("\\", " ").replace("\t", " ")
+
+#             # Only keep non-empty lines
+#             if line.strip():
+#                 cleaned_lines.append(line)
+
+#         # Join lines
+#         content = "\n".join(cleaned_lines)
+
+#         # Ensure destination directory exists
+#         destination_file.parent.mkdir(parents=True, exist_ok=True)
+
+#         # Write cleaned content
+#         with open(destination_file, "w", encoding="ISO-8859-1") as f:
+#             f.write(content)
+        
+#         logger.info(f"✅ File cleaned: {source_file.name} -> {destination_file.name}")
+
+#     except FileNotFoundError as e:
+#         logger.error(f"File not found error: {str(e)}")
+#         raise RuntimeError(f"File not found: {source_file.name}")
+    
+#     except PermissionError as e:
+#         logger.error(f"Permission error: {str(e)}")
+#         raise RuntimeError(f"Permission denied accessing file: {source_file.name}")
+    
+#     except UnicodeDecodeError as e:
+#         logger.error(f"Encoding error: {str(e)}")
+#         raise RuntimeError(f"Cannot read file {source_file.name} - encoding issue")
+    
+#     except Exception as e:
+#         logger.error(f"Unexpected error cleaning file {source_file}: {str(e)}")
+#         raise RuntimeError(f"Error cleaning file {source_file.name}: {str(e)}")
+
+
 def copy_file_with_encoding(source_file: Path, destination_file: Path):
     """
     Clean file before DB COPY:
@@ -423,68 +500,56 @@ def copy_file_with_encoding(source_file: Path, destination_file: Path):
     - Remove quote-like characters
     - Remove empty lines
     - Replace backslashes and tabs
+    - FIXED: Prevent double blank lines
     """
     try:
-        # Validate source file exists
         if not source_file.exists():
             raise FileNotFoundError(f"Source file not found: {source_file}")
-        
+
         if not source_file.is_file():
             raise ValueError(f"Source path is not a file: {source_file}")
-        
-        # Read source file
-        with open(source_file, "r", encoding="ISO-8859-1", errors="ignore") as f:
-            lines = f.readlines()
 
         cleaned_lines = []
 
-        for line in lines:
-            # Remove null characters
-            line = line.replace("\x00", " ")
-            
-            # Remove non-ASCII characters
-            line = "".join(c if ord(c) < 128 else " " for c in line)
-            
-            # Remove double quotes
-            line = line.replace('""', " ")
+        with open(source_file, "r", encoding="ISO-8859-1", errors="ignore") as f:
+            for raw_line in f:
+                # Remove newline characters first
+                line = raw_line.rstrip("\r\n")
 
-            # Remove various quote characters
-            for ch in ['"', "'", "'", "'", "‚", "‛", "`", "´"]:
-                line = line.replace(ch, " ")
+                # Remove null characters
+                line = line.replace("\x00", " ")
 
-            # Replace backslashes and tabs
-            line = line.replace("\\", " ").replace("\t", " ")
+                # Remove non-ASCII characters
+                line = "".join(c if ord(c) < 128 else " " for c in line)
 
-            # Only keep non-empty lines
-            if line.strip():
-                cleaned_lines.append(line)
+                # Remove double quotes
+                line = line.replace('""', " ")
 
-        # Join lines
-        content = "\n".join(cleaned_lines)
+                # Remove various quote characters
+                for ch in ['"', "'", "‚", "‛", "`", "´"]:
+                    line = line.replace(ch, " ")
 
-        # Ensure destination directory exists
+                # Replace backslashes and tabs
+                line = line.replace("\\", " ").replace("\t", " ")
+
+                # Strip trailing spaces only (preserve fixed width structure)
+                line = line.rstrip()
+
+                # Skip empty lines completely
+                if line.strip():
+                    cleaned_lines.append(line)
+
+        # Write clean content with EXACT single newline per row
         destination_file.parent.mkdir(parents=True, exist_ok=True)
 
-        # Write cleaned content
-        with open(destination_file, "w", encoding="ISO-8859-1") as f:
-            f.write(content)
-        
-        logger.info(f"✅ File cleaned: {source_file.name} -> {destination_file.name}")
+        with open(destination_file, "w", encoding="ISO-8859-1", newline="\n") as f:
+            for line in cleaned_lines:
+                f.write(line + "\n")
 
-    except FileNotFoundError as e:
-        logger.error(f"File not found error: {str(e)}")
-        raise RuntimeError(f"File not found: {source_file.name}")
-    
-    except PermissionError as e:
-        logger.error(f"Permission error: {str(e)}")
-        raise RuntimeError(f"Permission denied accessing file: {source_file.name}")
-    
-    except UnicodeDecodeError as e:
-        logger.error(f"Encoding error: {str(e)}")
-        raise RuntimeError(f"Cannot read file {source_file.name} - encoding issue")
-    
+        logger.info(f"✅ File cleaned (no extra blank lines): {source_file.name} -> {destination_file.name}")
+
     except Exception as e:
-        logger.error(f"Unexpected error cleaning file {source_file}: {str(e)}")
+        logger.error(f"Error cleaning file {source_file}: {str(e)}")
         raise RuntimeError(f"Error cleaning file {source_file.name}: {str(e)}")
 
 
@@ -499,16 +564,11 @@ def send_status(msg_type: str, msg: str):
 
 def run_db_script(file_path: str, display_name: str) -> str:
     """
-    Execute dynamically generated SQL script
-    
-    FIXES:
-    1. Removed incorrect metadata lookup (table_name, script_key don't exist)
-    2. Execute SQL statements directly without re-replacing placeholders
-    3. Proper error handling and connection management
+    Execute dynamically generated SQL script with comprehensive logging
     
     Args:
         file_path: Full path to data file
-        display_name: File display name (e.g., "Montrial")
+        display_name: File display name (e.g., "Montrial", "SHADOW_DEP")
         
     Returns:
         Success message or error detail
@@ -517,64 +577,152 @@ def run_db_script(file_path: str, display_name: str) -> str:
     cur = None
     
     try:
+        logger.info("=" * 80)
+        logger.info(f"🔧 Starting DB processing for: {display_name}")
+        logger.info(f"📁 File path: {file_path}")
+        logger.info("=" * 80)
+        
         # Generate dynamic script
+        logger.info(f"📝 Generating SQL script for {display_name}...")
         sqls = ScriptGenerator.get_script(display_name, file_path)
+        logger.info(f"✅ Generated {len(sqls)} SQL statements")
 
         # Get metadata for logging
         meta = FILE_METADATA.get(display_name)
         if not meta:
             raise Exception(f"No metadata found for {display_name}")
+        
+        logger.info(f"🔍 Metadata: {meta}")
 
         # Connect to DB
+        logger.info(f"🔌 Connecting to database: {DB_HOST}:{DB_PORT}/{DB_NAME}")
         conn = get_db_connection()
         cur = conn.cursor()
+        logger.info("✅ Database connected")
 
         # Set schema
         schema = os.getenv("BRANCH_SCHEMA", "public")
         cur.execute(f"SET search_path TO {schema}")
+        logger.info(f"📂 Schema set to: {schema}")
 
-        # Execute each SQL statement
-        for sql in sqls:
+        # Execute each SQL statement with detailed logging
+        for i, sql in enumerate(sqls, 1):
             sql_clean = sql.strip()
             if not sql_clean:
+                logger.debug(f"⏭️  Skipping empty statement {i}")
                 continue
 
-            # Log SQL for debugging
-            logger.info(f"Executing SQL for {display_name}: {sql_clean[:100]}...")
+            # Log the full SQL for critical statements
+            if "CALL" in sql_clean.upper():
+                logger.info(f"🔨 Executing SQL {i}/{len(sqls)} - PROCEDURE CALL:")
+                logger.info(f"   {sql_clean}")
+            elif "TRUNCATE" in sql_clean.upper():
+                logger.info(f"🔨 Executing SQL {i}/{len(sqls)} - TRUNCATE:")
+                logger.info(f"   {sql_clean[:100]}")
+            elif "ALTER SEQUENCE" in sql_clean.upper():
+                logger.info(f"🔨 Executing SQL {i}/{len(sqls)} - ALTER SEQUENCE:")
+                logger.info(f"   {sql_clean[:100]}")
+            elif "COPY" in sql_clean.upper():
+                logger.info(f"🔨 Executing SQL {i}/{len(sqls)} - COPY DATA:")
+                logger.info(f"   {sql_clean[:150]}...")
+            else:
+                logger.info(f"🔨 Executing SQL {i}/{len(sqls)}:")
+                logger.info(f"   {sql_clean[:100]}...")
             
-            cur.execute(sql_clean)
+            try:
+                cur.execute(sql_clean)
+                rows_affected = cur.rowcount
+                logger.info(f"   ✅ Success - Rows affected: {rows_affected}")
+            except Exception as exec_error:
+                logger.error(f"   ❌ FAILED: {str(exec_error)}")
+                raise
+
+        # Check data after execution (for SHADOW tables)
+        if display_name in ["SHADOW_DEP", "SHADOW_LOAN"]:
+            table_name = meta.get("tableName")
+            logger.info(f"🔍 Checking data in {table_name}...")
+            
+            # Check total rows
+            cur.execute(f"SELECT COUNT(*) FROM {table_name}")
+            total_rows = cur.fetchone()[0]
+            logger.info(f"   📊 Total rows in {table_name}: {total_rows}")
+            
+            # Check rows with fulltext
+            cur.execute(f"SELECT COUNT(*) FROM {table_name} WHERE fulltext IS NOT NULL")
+            fulltext_rows = cur.fetchone()[0]
+            logger.info(f"   📄 Rows with fulltext: {fulltext_rows}")
+            
+            # Check rows with parsed data (instno column as indicator)
+            cur.execute(f"SELECT COUNT(*) FROM {table_name} WHERE instno IS NOT NULL")
+            parsed_rows = cur.fetchone()[0]
+            logger.info(f"   ✨ Rows with parsed data (instno IS NOT NULL): {parsed_rows}")
+            
+            if total_rows > 0 and parsed_rows == 0:
+                logger.error(f"   ⚠️  WARNING: Data loaded but NOT PARSED!")
+                logger.error(f"   ⚠️  Procedure '{meta.get('procedureName')}()' may be broken!")
+                logger.error(f"   ⚠️  Check procedure definition and SUBSTR positions!")
+                
+                # Show sample fulltext to help debug
+                cur.execute(f"SELECT LEFT(fulltext, 150) FROM {table_name} LIMIT 1")
+                sample = cur.fetchone()
+                if sample:
+                    logger.error(f"   📄 Sample fulltext data:")
+                    logger.error(f"      {sample[0]}")
+                    
+            elif parsed_rows > 0:
+                logger.info(f"   ✅ Data successfully parsed!")
+                
+                # Show sample of parsed data
+                cur.execute(f"""
+                    SELECT instno, accountno, branchno, LEFT(cust_name, 20) as cust_name 
+                    FROM {table_name} 
+                    WHERE instno IS NOT NULL 
+                    LIMIT 3
+                """)
+                samples = cur.fetchall()
+                logger.info(f"   📋 Sample parsed records:")
+                for row in samples:
+                    logger.info(f"      {row}")
 
         # Commit transaction
         conn.commit()
+        logger.info("💾 Transaction committed successfully")
 
+        logger.info("=" * 80)
         msg = f"✅ DB Processing completed for {display_name} ({schema})"
+        logger.info(msg)
+        logger.info("=" * 80)
         send_status("success", msg)
         return msg
 
     except ValueError as e:
         # Script generation error
         error_msg = f"❌ Script generation error for {display_name}: {str(e)}"
+        logger.error(error_msg)
         send_status("error", error_msg)
         if conn:
             conn.rollback()
+            logger.info("🔄 Transaction rolled back")
         raise HTTPException(status_code=400, detail=str(e))
         
     except psycopg2.Error as e:
         # Database execution error
         error_msg = f"❌ DB error for {display_name}: {str(e)}"
+        logger.error(error_msg, exc_info=True)
         send_status("error", error_msg)
-        logger.error(error_msg)
         if conn:
             conn.rollback()
+            logger.info("🔄 Transaction rolled back")
         raise HTTPException(status_code=500, detail=str(e))
         
     except Exception as e:
         # Unexpected error
         error_msg = f"❌ Unexpected error for {display_name}: {str(e)}"
+        logger.error(error_msg, exc_info=True)
         send_status("error", error_msg)
-        logger.error(error_msg)
         if conn:
             conn.rollback()
+            logger.info("🔄 Transaction rolled back")
         raise HTTPException(status_code=500, detail=str(e))
         
     finally:
@@ -583,6 +731,7 @@ def run_db_script(file_path: str, display_name: str) -> str:
             cur.close()
         if conn:
             conn.close()
+        logger.info(f"🔌 Database connection closed for {display_name}")
 
 
 async def process_file(file: FileItem, request: FileRequest):
