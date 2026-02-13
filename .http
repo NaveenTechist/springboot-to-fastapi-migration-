@@ -78,23 +78,49 @@ Content-Type: application/json
 }
 
 
-
-
-
-
 ####
+
+### SHADOW_DEP Upload
+POST http://localhost:8000/copy
+Content-Type: application/json
+
 {
-  "reportType": "GEN001",
-  "branch": "0",
-  "fromDate": "2024-03-31",
-  "toDate": "2024-03-31",
-  "page": 1,
-  "size": 10,
-  "sortBy": "report_date",
-  "sortDirection": "DESC",
-  "filters": []
+  "fromPath": "E:/Reports",
+  "toPath": "E:/NYXPG/Data",
+  "startDate": "2024-03-31",
+  "endDate": "2024-03-31",
+  "files": [
+    {
+      "key": "SH0000DEP",
+      "name": "SHADOW_DEP",
+      "display_name": "SHADOW_DEP",
+      "files": 1,
+      "file_type": "prefix",
+      "db": "nyx"
+    }
+  ]
 }
 
 
-####
+### SHADOW_LOAN Upload
+POST http://localhost:8000/copy
+Content-Type: application/json
+
+{
+  "fromPath": "E:/Reports",
+  "toPath": "E:/NYXPG/Data",
+  "startDate": "2024-03-31",
+  "endDate": "2024-03-31",
+  "files": [
+    {
+      "key": "SH0000LON",
+      "name": "SHADOW_LOAN",
+      "display_name": "SHADOW_LOAN",
+      "files": 1,
+      "file_type": "prefix",
+      "db": "nyx"
+    }
+  ]
+}
+
 

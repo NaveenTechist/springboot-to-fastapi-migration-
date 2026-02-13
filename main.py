@@ -48,7 +48,22 @@ FILE_METADATA = {
         "procedureName": "mon_trial_load",
         "useFilePath": False,
         "scriptType": "custom"
-    }
+    },
+    "SHADOW_DEP": {
+    "tableName": "shadow_dep",
+    "sequenceName": "shadow_dep_rno_seq",
+    "procedureName": "shadow_dep_upd_2",
+    "useFilePath": False,
+    "scriptType": "custom"
+    },
+
+    "SHADOW_LOAN": {
+        "tableName": "shadow_loan",
+        "sequenceName": "shadow_loan_rno_seq",
+        "procedureName": "shadow_loan_upd_2",
+        "useFilePath": False,
+        "scriptType": "custom"
+    },
 }
 
 
@@ -72,10 +87,8 @@ CUSTOM_SCRIPTS = {
 
               # 1️⃣ Truncate
              "TRUNCATE TABLE mon_trial_daily;",
-
              # 2️⃣ Reset sequence
              "ALTER SEQUENCE mon_trial_daily_rno_seq RESTART WITH 1;",
-
 #             # 3️⃣ COPY (file_path used here clearly)
              f"""
              COPY mon_trial_daily(fulltext)
@@ -85,7 +98,6 @@ CUSTOM_SCRIPTS = {
                  ENCODING 'UTF8'
              );
              """,
-
              # 4️⃣ Cleanup deletes
              "delete from mon_trial_daily where substr(fulltext,3,10) ='B: GLAJ02 ';",
              "delete from mon_trial_daily where substr(fulltext,3,10) ='EQUEST PAR';",
@@ -103,10 +115,8 @@ CUSTOM_SCRIPTS = {
              "delete from mon_trial_daily where fulltext IS NULL;",
              "delete from mon_trial_daily where trim(fulltext)='.00';",
              "delete from mon_trial_daily where trim(fulltext)='UNIT TOTAL';",
-
              # 5️⃣ Procedure
              "CALL mon_trial_load();",
-
              # 6️⃣ Final insert
              """
              INSERT INTO MONTRIAL
@@ -123,10 +133,49 @@ CUSTOM_SCRIPTS = {
              FROM MON_TRIAL_DAILY
              WHERE END_BAL IS NOT NULL;
              """,
-
              # 7️⃣ Final procedure
              "CALL mon_trial_drcr();"
-         ]
+         ],
+         # ==========================================
+    # SHADOW_DEP
+    # ==========================================
+    "SHADOW_DEP": [
+
+        "TRUNCATE TABLE {{TABLE_NAME}};",
+        "ALTER SEQUENCE {{SEQUENCE_NAME}} RESTART WITH 1;",
+
+        """
+        COPY {{TABLE_NAME}}(fulltext)
+        FROM STDIN
+        WITH (
+            FORMAT text,
+            ENCODING 'UTF8'
+        );
+        """,
+
+        "{{CALL_PROCEDURE}}"
+    ],
+
+
+    # ==========================================
+    # SHADOW_LOAN
+    # ==========================================
+    "SHADOW_LOAN": [
+
+        "TRUNCATE TABLE {{TABLE_NAME}};",
+        "ALTER SEQUENCE {{SEQUENCE_NAME}} RESTART WITH 1;",
+
+        """
+        COPY {{TABLE_NAME}}(fulltext)
+        FROM STDIN
+        WITH (
+            FORMAT text,
+            ENCODING 'UTF8'
+        );
+        """,
+
+        "{{CALL_PROCEDURE}}"
+    ]
 }
 
 # DB Config
@@ -253,31 +302,51 @@ class ScriptGenerator:
         statements = []
 
         procedure = metadata.get("procedureName")
+        table_name = metadata.get("tableName")
+        sequence_name = metadata.get("sequenceName")
 
-        # Build correct CALL statement
-        if metadata.get("passFilePathToProcedure", False):
-            call_stmt = f"CALL {procedure}('{file_path}');"
+        # Build CALL statement
+        if procedure:
+            if metadata.get("passFilePathToProcedure", False):
+                call_stmt = f"CALL {procedure}('{file_path}');"
+            else:
+                call_stmt = f"CALL {procedure}();"
         else:
-            call_stmt = f"CALL {procedure}();"
+            call_stmt = ""
 
         for stmt in base_script:
             statement = stmt
 
-            # Replace table
-            statement = statement.replace(
-                "{{TABLE_NAME}}",
-                metadata.get("tableName", "")
-            )
+            # Replace TABLE
+            if table_name:
+                statement = statement.replace(
+                    "{{TABLE_NAME}}",
+                    table_name
+                )
+
+            # Replace SEQUENCE (only if exists)
+            if sequence_name:
+                statement = statement.replace(
+                    "{{SEQUENCE_NAME}}",
+                    sequence_name
+                )
+            else:
+                # If metadata doesn't have sequence,
+                # remove the ALTER SEQUENCE line completely
+                if "{{SEQUENCE_NAME}}" in statement:
+                    continue  # skip this statement
 
             # Replace CALL
-            statement = statement.replace(
-                "{{CALL_PROCEDURE}}",
-                call_stmt
-            )
+            if "{{CALL_PROCEDURE}}" in statement:
+                statement = statement.replace(
+                    "{{CALL_PROCEDURE}}",
+                    call_stmt
+                )
 
             statements.append(statement)
 
         return statements
+
 
 
 
@@ -342,6 +411,47 @@ def unzip_file(source: Path, dest: Path) -> Path:
         current = out_file
 
     return current
+
+# =========================================================
+# FILE CLEANER (Same as Java logic)
+# =========================================================
+
+def copy_file_with_encoding(source_file: Path, destination_file: Path):
+    """
+    Clean file before DB COPY:
+    - Remove null characters
+    - Remove non-ASCII characters
+    - Remove quote-like characters
+    - Remove empty lines
+    - Replace backslashes and tabs
+    """
+
+    try:
+        with open(source_file, "r", encoding="ISO-8859-1", errors="ignore") as f:
+            lines = f.readlines()
+
+        cleaned_lines = []
+
+        for line in lines:
+            line = line.replace("\x00", " ")
+            line = "".join(c if ord(c) < 128 else " " for c in line)
+            line = line.replace('""', " ")
+
+            for ch in ['"', "'", "‘", "’", "‚", "‛", "`", "´"]:
+                line = line.replace(ch, " ")
+
+            line = line.replace("\\", " ").replace("\t", " ")
+
+            if line.strip():
+                cleaned_lines.append(line)
+
+        content = "\n".join(cleaned_lines)
+
+        with open(destination_file, "w", encoding="ISO-8859-1") as f:
+            f.write(content)
+
+    except Exception as e:
+        raise RuntimeError(f"Error cleaning file: {str(e)}")
 
 
 def send_status(msg_type: str, msg: str):
@@ -451,8 +561,9 @@ async def process_file(file: FileItem, request: FileRequest):
                 
                 # Copy to destination
                 dest_file = dest_dir / actual_file.name
-                if actual_file.parent.resolve() != dest_dir.resolve():
+                if actual_file.parent.resolve() != dest_dir.resolve():   # call cleaning function 
                     shutil.copy(actual_file, dest_file)
+                    copy_file_with_encoding(actual_file, dest_file)
 
                 # HERE: Execute dynamic DB script
                 # IMPORTANT: Use display_name to lookup metadata
@@ -803,7 +914,7 @@ async def copy_endpoint(request: FileRequest, background_tasks: BackgroundTasks)
     """
     if not request.files:
         raise HTTPException(status_code=400, detail="At least one file must be selected")
-
+    print(request)
     delete_all_files_in_directory(request.toPath)
 
     # Process all files concurrently
@@ -811,12 +922,14 @@ async def copy_endpoint(request: FileRequest, background_tasks: BackgroundTasks)
         *(process_file(f, request) for f in request.files),
         return_exceptions=True  # Catch individual file errors
     )
+    
 
     # Handle exceptions in results
     flat_results = []
+    
     for result in results:
         if isinstance(result, Exception):
-            flat_results.append(f"❌ Error: {str(result)}")
+            flat_results.append(f"❌ Errorr: {str(result)}")
         elif isinstance(result, list):
             flat_results.extend(result)
         else:
