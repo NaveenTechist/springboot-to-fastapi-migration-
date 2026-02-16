@@ -81,32 +81,15 @@ Each report module was migrated from Spring Boot Java logic into equivalent Fast
 
 Modules include:
 
-✔ **Montrial** (Trial Balance Reporting)  
-✔ **CCOD** (Core Customer On Demand Reporting)  
-✔ **TDS** (Tax Data Services)  
-✔ **SHA-DEP** (Shadow Deposit Analytics)  
-✔ **SHA-LOAN** (Shadow Loan Analytics)
+✔ **Montrial** 
+✔ **CCOD**  
+✔ **TDS** 
+✔ **SHA-DEP**
+✔ **SHA-LOAN**
 
 ---
 
-## 📈 Performance Graphs & Visual Comparison
 
-The `/charts/` folder includes bar charts for each module showing:
-
-- Spring Boot average execution times  
-- FastAPI average execution times  
-
-These graphs provide a quick visual snapshot for stakeholders and managers.
-
----
-
-## 📝 Professional Performance Report
-
-A fully formatted **CEO-ready performance report** is included in:
-
-📄 `/reports/LMST_Performance_Report_CEO_Version.docx`  
-or  
-📄 `/reports/LMST_Final_Performance_Report.pdf`
 
 This contains:
 
@@ -117,12 +100,5 @@ This contains:
 ✅ Consolidated summary  
 ✅ Overall conclusion
 
----
-
-## 🔧 How to Run Performance Tests
-
-1. Clone the repository  
-```bash
-git clone https://github.com/NaveenTechist/springboot-to-fastapi-migration
 
 
